@@ -37,19 +37,36 @@ var nroi = rm.getCount();
 IJ.log("\n*****************************************************\nAutocorrelation has started!\n*****************************************************\n");
 
 // Default variables
-var profileLength_Def = 1; // profile length in um
-var profileWidth_Def = 0.4; // profile width in um
+var profileLength_Def = 0; // profile length in um
+var corrLength_Def = 4; // autocorrelation span in um
+var profileWidth_Def = 0.8; // profile width in um
 
 var plotSizeX = 800;
 var plotSizeY = 512;
 
+// Get maximum length
+var maxLengthPx = 0;
+	
+for (var r = 0; r < nroi; r++) {
+	rm.select(imp, r);
+	var roi = ra[r];
+	var prof = new ProfilePlot(imp);
+	var coord = prof.getProfile();
+	if (coord.length > maxLengthPx) maxLengthPx = coord.length;
+}
+
+var maxLength =  maxLengthPx * pxSize;
+
+
 // Options Dialog
 var gd = new GenericDialog("AutoCorrelation Options");
 gd.addMessage("Scale: " + pxSize + " " + pxUnit + " per pixel");
-gd.addNumericField("Max profile length (end cropped):", profileLength_Def, 3, 5, pxUnit);
+gd.addNumericField("Max profile length:", maxLength, 0, 3, pxUnit);
+gd.addNumericField("Autocorrelation span:", corrLength_Def, 3, 5, pxUnit);
 gd.addNumericField("Profile width (average):", profileWidth_Def, 3, 5, pxUnit);
 gd.showDialog();
 var profileLength = gd.getNextNumber();
+var corrLength = gd.getNextNumber();
 var profileWidth = gd.getNextNumber();
 
 // Main part
@@ -62,9 +79,10 @@ if (gd.wasOKed()) {
 	// Width and length in pixels
 	var profileWidthPx = Math.round(profileWidth / pxSize);
 	var profileLengthPx = Math.round(profileLength / pxSize);
+	var corrLengthPx = Math.round(corrLength / pxSize);
 
 	// Output name (with parameters)
-	var outName = stackName + "_FS(l" + profileLength + ",w" + profileWidth + ")";
+	var outName = stackName + "_AC(l" + corrLength + ",w" + profileWidth + ")";	
 
 	for (var r = 0; r < nroi; r++) {
 
@@ -83,13 +101,21 @@ if (gd.wasOKed()) {
 		// get initial width
 		var iw = roi.getStrokeWidth();
 		rm.select(imp, r);
-		// set desired witdh
-		rm.runCommand("Set Line Width", profileWidthPx);
-		// get profile values
-		var profPlot = new ProfilePlot(imp);
-		var rawY = profPlot.getProfile();
-		// set back initial line width
-		rm.runCommand("Set Line Width", iw);
+		
+		if (profileWidth > 0) {
+			// set desired witdh
+			rm.runCommand("Set Line Width", profileWidthPx);
+			// get profile values
+			var profPlot = new ProfilePlot(imp);
+			var rawY = profPlot.getProfile();
+			// set back initial line width
+			rm.runCommand("Set Line Width", iw);
+		}
+
+		else {
+			var profPlot = new ProfilePlot(imp);
+			var rawY = profPlot.getProfile();
+		}
 
 	// Get scaled X coordinates
 		var rawX = new Array(rawY.length);
@@ -115,7 +141,7 @@ if (gd.wasOKed()) {
 		currPF.pStats = getStats(currPF.pCropY);
 
 	// Compute the autocorrelation
-		var gxy = getAc(currPF.pCropY);
+		var gxy = getAc(currPF.pCropY, corrLengthPx);
 
 		var corrXpx = gxy[0];
 		var corrY = gxy [1];
@@ -186,7 +212,7 @@ if (gd.wasOKed()) {
 	}
 
 	// Create i+ from the profiles stack
-	var plotImp = new ImagePlus(outName + "_Plots", plotStacks);
+	var plotImp = new ImagePlus(outName + "_Profiles", plotStacks);
 	// Show the profiles stack
 	plotImp.show();
 
@@ -200,8 +226,8 @@ if (gd.wasOKed()) {
 	var plotAcMaxAllY = getMaxValue("pAcStats[2]", allProfileFits);
 
 	// Set plot range
-	var plotAcMaxX = profileLength/2; // length is defined by crop length
-	var plotAcMinX = - profileLength/2;
+	var plotAcMaxX = corrLength/2; // length is defined by crop length
+	var plotAcMinX = - corrLength/2;
 	var plotAcMinY = plotAcMinAllY - (plotAcMaxAllY - plotAcMinAllY) * 0.3;
 	var plotAcMaxY = plotAcMaxAllY + (plotAcMaxAllY - plotAcMinAllY) * 0.3;
 
@@ -270,6 +296,58 @@ if (gd.wasOKed()) {
 }
 
 
+// Make Profiles table
+		
+		// Initialize the Profiles Table
+		var pt = new ResultsTable();
+
+		// X values
+		var Profile = allProfileFits[0];
+		for (var p = 0; p < maxLengthPx; p++) {	
+			pt.setValue("Scaled X", p, p * pxSize);
+		}
+		
+		for (var r = 0; r < allProfileFits.length; r++) {
+	
+			var Profile = allProfileFits[r];
+			
+			for (p = 0; p < Profile.pCropY.length; p++) {
+				pt.setValue(Profile.pSliceLabel + ":" + Profile.pRoiName, p, Profile.pCropY[p]);
+			}
+			for (p = Profile.pCropY.length; p < maxLengthPx; p++) {
+				pt.setValue(Profile.pSliceLabel + ":" + Profile.pRoiName, p, Number.NaN);
+			}
+		}
+		// show the Profiles Table
+		pt.show(outName + "_Profiles");
+
+
+// Make AC table
+		
+		// Initialize the AC Table
+		var act = new ResultsTable();
+
+		// X values	
+		var Profile = allProfileFits[0];
+		
+		for (var p = 0; p < Profile.pAcX.length; p++) {	
+			act.setValue("Scaled X", p, Profile.pAcX[p]);
+		}
+		
+		for (var r = 0; r < allProfileFits.length; r++) {
+	
+			var Profile = allProfileFits[r];
+			
+			for (var p = 0; p < Profile.pAcNY.length; p++) {
+				act.setValue(Profile.pSliceLabel + ":" + Profile.pRoiName, p, Profile.pAcNY[p]);
+			}
+		}
+		// show the Profiles Table
+		act.show(outName + "_Autocorr");
+
+
+
+
 // Functions
 
 
@@ -311,7 +389,10 @@ function getStats(ar) {
 }
 
 // Compute the autocorrelation of an array
-function getAc(a) {
+function getAc(a, s) {
+
+	if (s == 0) s = a.length;
+	
 	var aStats = getStats(a);
 	var amean = aStats[3];
 
@@ -320,7 +401,7 @@ function getAc(a) {
 		avar[i] = a[i] - amean;
 	}
 
-	var mid = Math.floor(a.length / 2);
+	var mid = Math.floor(s / 2);
 	var gx = new Array(2 * mid + 1);
 	var gy = new Array(2 * mid + 1);
 	for (var i = - mid; i < mid + 1; i++) {
@@ -423,6 +504,16 @@ function getMaxValue(f, pfs) {
 	var max = fa[0];
 	for (var i = 0; i < fa.length; i++) {
 		if (fa[i] > max) max = fa[i];
+	}
+	return max;
+}
+
+// Take the ProfileFits arrays and returns the max length for a given parameter array across all ProfileFits
+function getMaxLength(f, pfs) {
+	var fa = getAllValues(f, pfs);
+	var max = fa[0];
+	for (var i = 0; i < fa.length; i++) {
+		if (fa[i].length > max) max = fa[i].length;
 	}
 	return max;
 }
