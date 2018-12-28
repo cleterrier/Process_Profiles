@@ -63,7 +63,7 @@ var gd = new GenericDialog("AutoCorrelation Options");
 gd.addMessage("Scale: " + pxSize + " " + pxUnit + " per pixel");
 gd.addNumericField("Max profile length:", maxLength, 0, 3, pxUnit);
 gd.addNumericField("Autocorrelation span:", corrLength_Def, 3, 5, pxUnit);
-gd.addNumericField("Profile width (average):", profileWidth_Def, 3, 5, pxUnit);
+gd.addNumericField("Profile width (0 to keep ROI width):", profileWidth_Def, 3, 5, pxUnit);
 gd.showDialog();
 var profileLength = gd.getNextNumber();
 var corrLength = gd.getNextNumber();
