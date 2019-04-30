@@ -38,8 +38,9 @@ IJ.log("\n*****************************************************\nAutocorrelation
 
 // Default variables
 var profileLength_Def = 0; // profile length in um
-var corrLength_Def = 4; // autocorrelation span in um
-var profileWidth_Def = 0.8; // profile width in um
+var corrLength_Def = 1; // autocorrelation span in um
+var neg_Def = false; // include negative values in autocorrelation
+var profileWidth_Def = 0; // profile width in um
 
 var plotSizeX = 800;
 var plotSizeY = 512;
@@ -63,10 +64,13 @@ var gd = new GenericDialog("AutoCorrelation Options");
 gd.addMessage("Scale: " + pxSize + " " + pxUnit + " per pixel");
 gd.addNumericField("Max profile length:", maxLength, 0, 3, pxUnit);
 gd.addNumericField("Autocorrelation span:", corrLength_Def, 3, 5, pxUnit);
+gd.addCheckbox("Include negative values", neg_Def);
 gd.addNumericField("Profile width (0 to keep ROI width):", profileWidth_Def, 3, 5, pxUnit);
 gd.showDialog();
 var profileLength = gd.getNextNumber();
-var corrLength = gd.getNextNumber();
+var chosenLength = gd.getNextNumber();
+var corrLength = 2 * chosenLength;
+var neg = gd.getNextBoolean();
 var profileWidth = gd.getNextNumber();
 
 // Main part
@@ -82,7 +86,7 @@ if (gd.wasOKed()) {
 	var corrLengthPx = Math.round(corrLength / pxSize);
 
 	// Output name (with parameters)
-	var outName = stackName + "_AC(l" + corrLength + ",w" + profileWidth + ")";	
+	var outName = stackName + "_AC(l" + chosenLength + ",w" + profileWidth + ")";	
 
 	for (var r = 0; r < nroi; r++) {
 
@@ -141,7 +145,7 @@ if (gd.wasOKed()) {
 		currPF.pStats = getStats(currPF.pCropY);
 
 	// Compute the autocorrelation
-		var gxy = getAc(currPF.pCropY, corrLengthPx);
+		var gxy = getAc(currPF.pCropY, corrLengthPx, neg);
 
 		var corrXpx = gxy[0];
 		var corrY = gxy [1];
@@ -226,8 +230,9 @@ if (gd.wasOKed()) {
 	var plotAcMaxAllY = getMaxValue("pAcStats[2]", allProfileFits);
 
 	// Set plot range
-	var plotAcMaxX = corrLength/2; // length is defined by crop length
-	var plotAcMinX = - corrLength/2;
+	if (neg == true) var plotAcMinX = -corrLength/2; // length is defined by crop length
+	else plotAcMinX = 0;
+	var plotAcMaxX = corrLength/2;
 	var plotAcMinY = plotAcMinAllY - (plotAcMaxAllY - plotAcMinAllY) * 0.3;
 	var plotAcMaxY = plotAcMaxAllY + (plotAcMaxAllY - plotAcMinAllY) * 0.3;
 
@@ -389,7 +394,7 @@ function getStats(ar) {
 }
 
 // Compute the autocorrelation of an array
-function getAc(a, s) {
+function getAc(a, s, n) {
 
 	if (s == 0) s = a.length;
 	
@@ -404,15 +409,27 @@ function getAc(a, s) {
 	var mid = Math.floor(s / 2);
 	var gx = new Array(2 * mid + 1);
 	var gy = new Array(2 * mid + 1);
-	for (var i = - mid; i < mid + 1; i++) {
-		gx[mid + i] = i;
+	if (neg == true) {
+		var imin = - mid;
+		var iref = mid;
+		var gx = new Array(2 * mid + 1);
+		var gy = new Array(2 * mid + 1);
+	}
+	 else {
+	 	var imin = 0;
+	 	var iref = 0;
+	 	var gx = new Array(mid + 1);
+		var gy = new Array(mid + 1);	
+	 }
+	for (var i = imin; i < mid + 1; i++) {
+		gx[iref + i] = i;
 		var isum = 0;
 		var inum = 0;
 		for (t = Math.max(0, 0 - i); t < Math.min(a.length - i, a.length); t++) {
 			isum += avar[t] * avar[t+i];
 			inum ++;
 		}
-		gy[mid + i] = (isum / inum) / (amean * amean);
+		gy[iref + i] = (isum / inum) / (amean * amean);
 	}
 	return [gx, gy];
 }
